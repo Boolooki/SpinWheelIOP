@@ -403,6 +403,58 @@
     font-weight: 900;
     box-shadow: 0 0 10px var(--yellow);
   }
+  .name-tag.removed {
+    opacity: 0.22;
+    text-decoration: line-through;
+    border-color: rgba(255,255,255,0.1);
+    background: transparent;
+    color: #888;
+  }
+  .name-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .name-list-header h3 { margin-bottom: 0; }
+  .name-list-meta {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .names-counter {
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 12px;
+    color: var(--yellow);
+    text-shadow: 0 0 6px var(--yellow);
+    letter-spacing: 2px;
+    white-space: nowrap;
+  }
+  .btn-reset {
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #000;
+    background: var(--yellow);
+    border: none; border-radius: 20px;
+    padding: 4px 14px;
+    cursor: pointer;
+    box-shadow: 0 3px 0 #5a3800;
+    transition: all 0.12s;
+    white-space: nowrap;
+  }
+  .btn-reset:hover { transform: translateY(-1px); box-shadow: 0 4px 0 #5a3800, 0 0 12px var(--yellow); }
+  .btn-reset:active { transform: translateY(2px); box-shadow: 0 1px 0 #5a3800; }
+  /* Empty state */
+  .empty-state {
+    width: 100%; text-align: center;
+    padding: 10px 0;
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: rgba(255,214,0,0.5);
+  }
 
   /* ====== FOOTER ====== */
   .footer-strip {
@@ -578,7 +630,13 @@
 
   <!-- Name list -->
   <div class="name-list-box">
-    <h3>🎙️ รายชื่อผู้เข้าร่วม — ไมค์ทองคำ OD69</h3>
+    <div class="name-list-header">
+      <h3>🎙️ รายชื่อผู้เข้าร่วม — ไมค์ทองคำ OD69</h3>
+      <div class="name-list-meta">
+        <span id="namesCounter" class="names-counter"></span>
+        <button class="btn-reset" onclick="resetNames()" title="รีเซ็ตรายชื่อทั้งหมด">&#8635; รีเซ็ต</button>
+      </div>
+    </div>
     <div class="name-tags" id="nameTags"></div>
   </div>
 
@@ -823,10 +881,6 @@ const NAMES_DATA = [
     "position": "นักจัดการงานทั่วไปปฏิบัติการ"
   },
   {
-    "name": "นางสาวธันย์ชนก ประดับบรรจง",
-    "position": "นักวิเคราะห์นโยบายและแผนปฏิบัติการ"
-  },
-  {
     "name": "นางลักษณ์ แรงฤทธิ์",
     "position": "เจ้าพนักงานธุรการชำนาญงาน"
   },
@@ -986,6 +1040,7 @@ let names = [...NAMES_DATA];
 let spinning = false;
 let currentAngle = 0;
 let animFrame;
+let pendingWinner = null; // person to remove after closing result popup
 
 const canvas = document.getElementById('wheelCanvas');
 const ctx = canvas.getContext('2d');
@@ -1092,12 +1147,38 @@ function drawWheel(rotation) {
 function buildNameTags(winnerName = null) {
   const container = document.getElementById('nameTags');
   container.innerHTML = '';
-  names.forEach(p => {
+  const allNames = [...NAMES_DATA];
+  const remainingSet = new Set(names.map(p => p.name));
+
+  if (names.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = '🎤 สุ่มครบทุกคนแล้ว! ';
+    container.appendChild(empty);
+  }
+
+  allNames.forEach(p => {
+    const isRemoved = !remainingSet.has(p.name);
+    const isWinner  = p.name === winnerName;
     const tag = document.createElement('span');
-    tag.className = 'name-tag' + (p.name === winnerName ? ' winner' : '');
+    tag.className = 'name-tag' + (isWinner ? ' winner' : '') + (isRemoved ? ' removed' : '');
     tag.textContent = p.name;
     container.appendChild(tag);
   });
+
+  // Update counter
+  const counter = document.getElementById('namesCounter');
+  if (counter) counter.textContent = '\u0e40\u0e2b\u0e25\u0e37\u0e2d ' + names.length + ' / ' + NAMES_DATA.length + ' \u0e04\u0e19';
+}
+
+// ---- Reset names ----
+function resetNames() {
+  if (spinning) return;
+  names = [...NAMES_DATA];
+  pendingWinner = null;
+  currentAngle = 0;
+  buildNameTags();
+  resizeCanvas();
 }
 
 // ---- Audio context for tick sounds ----
@@ -1284,6 +1365,7 @@ function startSpin() {
 
 // ---- Result ----
 function showResult(person) {
+  pendingWinner = person;
   buildNameTags(person.name);
   document.getElementById('resultName').textContent = person.name;
   const posEl = document.getElementById('resultPosition');
@@ -1295,6 +1377,19 @@ function showResult(person) {
 
 function closeResult() {
   document.getElementById('resultOverlay').classList.remove('show');
+  // Remove winner from pool after closing
+  if (pendingWinner) {
+    names = names.filter(p => p.name !== pendingWinner.name);
+    pendingWinner = null;
+    buildNameTags();
+    // Check if empty — disable spin
+    if (names.length === 0) {
+      const btn = document.getElementById('spinBtn');
+      btn.disabled = true;
+      btn.textContent = '\ud83c\udfa4 สุ่มครบทุกคนแล้ว!';
+    }
+    resizeCanvas();
+  }
 }
 
 // ---- Confetti ----
